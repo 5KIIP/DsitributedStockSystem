@@ -1,2 +1,2 @@
 # DsitributedStockSystem
-<img width="921" height="343" alt="ML Test (1)" src="https://github.com/user-attachments/assets/d75e3420-10ad-4a39-b0fa-ed9af5343e0f" />
+<img width="1121" height="603" alt="ML Test (2)" src="https://github.com/user-attachments/assets/967c2b9e-8822-45d2-9f73-24ae349272e0" />
