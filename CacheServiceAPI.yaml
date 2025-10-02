@@ -1,0 +1,749 @@
+openapi: 3.0.3
+info:
+  title: Cache Service API
+  description: Local client-side service that receives update notifications from remote server to synchronize local database cache
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8082/api/v1
+    description: Local service running on cashier PC
+
+tags:
+  - name: Sync
+    description: Synchronization webhook endpoints
+  - name: Management
+    description: Cache management operations
+
+paths:
+  /sync/products:
+    post:
+      tags:
+        - Sync
+      summary: Apply product transaction log
+      description: Receives a transaction log of product operations from server to apply to local cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                  description: Unique identifier for this transaction log
+                storeId:
+                  type: string
+                  description: Store ID this transaction is for
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When the transaction was created on server
+                sequenceNumber:
+                  type: integer
+                  description: Sequential number to ensure correct ordering
+                operations:
+                  type: array
+                  description: Ordered list of operations to apply
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - productId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field]
+                        description: Type of operation to perform
+                      productId:
+                        type: string
+                        description: Product identifier
+                      data:
+                        $ref: '#/components/schemas/Product'
+                        description: Full product data (for create/update)
+                      fields:
+                        type: object
+                        description: Specific fields to update (for update_field)
+                        additionalProperties: true
+                        example:
+                          totalStock: 45
+                          reservedStock: 3
+                          availableStock: 42
+      responses:
+        '200':
+          description: Updates processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          description: Invalid update data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+        '500':
+          description: Failed to update local cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /sync/reservations:
+    post:
+      tags:
+        - Sync
+      summary: Apply reservation transaction log
+      description: Receives a transaction log of reservation operations from server to apply to local cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                  description: Unique identifier for this transaction log
+                storeId:
+                  type: string
+                  description: Store ID this transaction is for
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When the transaction was created on server
+                sequenceNumber:
+                  type: integer
+                  description: Sequential number to ensure correct ordering
+                operations:
+                  type: array
+                  description: Ordered list of operations to apply
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - reservationId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field, cancel, complete]
+                        description: Type of operation to perform
+                      reservationId:
+                        type: string
+                        description: Reservation identifier
+                      data:
+                        $ref: '#/components/schemas/Reservation'
+                        description: Full reservation data (for create/update)
+                      fields:
+                        type: object
+                        description: Specific fields to update (for update_field)
+                        additionalProperties: true
+                        example:
+                          status: cancelled
+                          notes: Customer changed mind
+      responses:
+        '200':
+          description: Updates processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          description: Invalid update data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+        '500':
+          description: Failed to update local cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /sync/sales:
+    post:
+      tags:
+        - Sync
+      summary: Apply sale transaction log
+      description: Receives a transaction log of sale operations from server to apply to local cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                  description: Unique identifier for this transaction log
+                storeId:
+                  type: string
+                  description: Store ID this transaction is for
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When the transaction was created on server
+                sequenceNumber:
+                  type: integer
+                  description: Sequential number to ensure correct ordering
+                operations:
+                  type: array
+                  description: Ordered list of operations to apply
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - saleId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, update_field]
+                        description: Type of operation to perform (sales are never deleted)
+                      saleId:
+                        type: string
+                        description: Sale identifier
+                      data:
+                        $ref: '#/components/schemas/Sale'
+                        description: Full sale data (for create/update)
+                      fields:
+                        type: object
+                        description: Specific fields to update (for update_field)
+                        additionalProperties: true
+                        example:
+                          notes: Added customer receipt number
+      responses:
+        '200':
+          description: Updates processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          description: Invalid update data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+        '500':
+          description: Failed to update local cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /sync/batch:
+    post:
+      tags:
+        - Sync
+      summary: Apply batch transaction log
+      description: Receives a transaction log with multiple operations across different entities to apply atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                  description: Unique identifier for this batch transaction
+                storeId:
+                  type: string
+                  description: Store ID this batch is for
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When the transaction was created on server
+                sequenceNumber:
+                  type: integer
+                  description: Sequential number to ensure correct ordering
+                operations:
+                  type: array
+                  description: Ordered list of operations to apply atomically
+                  items:
+                    type: object
+                    required:
+                      - entityType
+                      - operation
+                      - entityId
+                    properties:
+                      entityType:
+                        type: string
+                        enum: [product, reservation, sale]
+                        description: Type of entity this operation targets
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field, cancel, complete]
+                        description: Type of operation to perform
+                      entityId:
+                        type: string
+                        description: Identifier of the entity (productId, reservationId, saleId)
+                      data:
+                        type: object
+                        description: Full entity data or partial data
+                      fields:
+                        type: object
+                        description: Specific fields to update
+                        additionalProperties: true
+      responses:
+        '200':
+          description: Batch processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSyncResponse'
+        '207':
+          description: Partial success (some updates failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSyncResponse'
+        '400':
+          description: Invalid batch data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /sync/full:
+    post:
+      tags:
+        - Sync
+      summary: Full cache refresh
+      description: Receives complete data snapshot from server to fully rebuild local cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - storeId
+                - timestamp
+                - snapshot
+              properties:
+                storeId:
+                  type: string
+                  description: Store ID this snapshot is for
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When this snapshot was taken
+                snapshot:
+                  type: object
+                  properties:
+                    products:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Product'
+                    reservations:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Reservation'
+                    sales:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Sale'
+      responses:
+        '200':
+          description: Full refresh completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '500':
+          description: Failed to rebuild cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /cache/status:
+    get:
+      tags:
+        - Management
+      summary: Get cache status
+      description: Returns current status of the local cache and sync state
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: Store ID to check status for
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cache status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storeId:
+                    type: string
+                  cacheHealth:
+                    type: string
+                    enum: [healthy, stale, corrupted, empty]
+                  lastSyncTime:
+                    type: string
+                    format: date-time
+                    description: Last successful sync from server
+                  lastSyncType:
+                    type: string
+                    enum: [incremental, full, batch]
+                  recordCounts:
+                    type: object
+                    properties:
+                      products:
+                        type: integer
+                      reservations:
+                        type: integer
+                      sales:
+                        type: integer
+                  syncStatistics:
+                    type: object
+                    properties:
+                      totalSyncsReceived:
+                        type: integer
+                      successfulSyncs:
+                        type: integer
+                      failedSyncs:
+                        type: integer
+                      lastError:
+                        type: string
+                      lastErrorTime:
+                        type: string
+                        format: date-time
+                  databaseSize:
+                    type: integer
+                    description: Size of local database in bytes
+
+  /cache/clear:
+    delete:
+      tags:
+        - Management
+      summary: Clear local cache
+      description: Clears all data from local cache (useful for troubleshooting)
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: Store ID to clear cache for
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cache cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Cache cleared successfully
+                  recordsDeleted:
+                    type: integer
+        '500':
+          description: Failed to clear cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /cache/rebuild:
+    post:
+      tags:
+        - Management
+      summary: Request cache rebuild
+      description: Triggers a request to the server for a full cache refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - storeId
+              properties:
+                storeId:
+                  type: string
+                  description: Store ID to rebuild cache for
+      responses:
+        '202':
+          description: Rebuild request sent to server
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Cache rebuild requested from server
+                  requestId:
+                    type: string
+        '503':
+          description: Cannot reach server to request rebuild
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncError'
+
+  /health:
+    get:
+      tags:
+        - Management
+      summary: Health check
+      description: Simple health check endpoint
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: integer
+                    description: Service uptime in seconds
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+        totalStock:
+          type: integer
+        reservedStock:
+          type: integer
+        availableStock:
+          type: integer
+        category:
+          type: string
+        imageUrl:
+          type: string
+        sku:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        workerId:
+          type: string
+        workerName:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+        customerName:
+          type: string
+        notes:
+          type: string
+        subtotal:
+          type: number
+          format: float
+        currency:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    Sale:
+      type: object
+      properties:
+        id:
+          type: string
+        saleNumber:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        workerId:
+          type: string
+        workerName:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+        customerName:
+          type: string
+        paymentMethod:
+          type: string
+        notes:
+          type: string
+        subtotal:
+          type: number
+          format: float
+        tax:
+          type: number
+          format: float
+        total:
+          type: number
+          format: float
+        currency:
+          type: string
+        reservationId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        syncId:
+          type: string
+          description: Unique identifier for this sync operation
+        timestamp:
+          type: string
+          format: date-time
+        recordsProcessed:
+          type: integer
+          description: Number of records updated in cache
+        processingTime:
+          type: integer
+          description: Time taken to process in milliseconds
+        cacheStatus:
+          type: string
+          enum: [synced, partial, failed]
+
+    BatchSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        syncId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        totalRecords:
+          type: integer
+        successfulRecords:
+          type: integer
+        failedRecords:
+          type: integer
+        results:
+          type: object
+          properties:
+            products:
+              type: object
+              properties:
+                processed:
+                  type: integer
+                failed:
+                  type: integer
+            reservations:
+              type: object
+              properties:
+                processed:
+                  type: integer
+                failed:
+                  type: integer
+            sales:
+              type: object
+              properties:
+                processed:
+                  type: integer
+                failed:
+                  type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              recordType:
+                type: string
+              recordId:
+                type: string
+              error:
+                type: string
+
+    SyncError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        syncId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_DATA
+                - DATABASE_ERROR
+                - CONFLICT
+                - STALE_UPDATE
+                - UNKNOWN_ERROR
+            message:
+              type: string
+            details:
+              type: object

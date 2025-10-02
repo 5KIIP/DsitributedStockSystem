@@ -1,0 +1,655 @@
+openapi: 3.0.3
+info:
+  title: QueryService API
+  description: Local client-side service for reading product, reservation, and sales data from cache
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local service running on cashier PC
+
+tags:
+  - name: Products
+    description: Product inventory queries
+  - name: Reservations
+    description: Reservation queries
+  - name: Sales
+    description: Sales history queries
+  - name: Cache
+    description: Cache management operations
+
+paths:
+  /products:
+    get:
+      tags:
+        - Products
+      summary: Get all products
+      description: Retrieves all products from local cache with availability status
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store to get products for
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: Filter products by category
+          required: false
+          schema:
+            type: string
+        - name: available
+          in: query
+          description: Filter to show only available products (not reserved or sold out)
+          required: false
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Search products by name or SKU
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /products/{productId}:
+    get:
+      tags:
+        - Products
+      summary: Get product by ID
+      description: Retrieves detailed information about a specific product from local cache
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: The unique identifier of the product
+          schema:
+            type: string
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reservations:
+    get:
+      tags:
+        - Reservations
+      summary: Get all active reservations
+      description: Retrieves all currently active product reservations for a specific store from local cache
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store to get reservations for
+          schema:
+            type: string
+        - name: workerId
+          in: query
+          description: Filter reservations by worker ID
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by reservation status
+          required: false
+          schema:
+            type: string
+            enum: [active, completed, cancelled]
+        - name: startDate
+          in: query
+          description: Filter reservations from this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Filter reservations until this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Reservation'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reservations/{reservationId}:
+    get:
+      tags:
+        - Reservations
+      summary: Get reservation details
+      description: Retrieves detailed information about a specific reservation from local cache
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          description: The unique identifier of the reservation
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Reservation'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sales:
+    get:
+      tags:
+        - Sales
+      summary: Get all sales
+      description: Retrieves a list of completed sales transactions for a specific store from local cache
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store to get sales for
+          schema:
+            type: string
+        - name: workerId
+          in: query
+          description: Filter sales by worker ID
+          required: false
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          description: Filter sales from this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Filter sales until this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sale'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+
+  /sales/{saleId}:
+    get:
+      tags:
+        - Sales
+      summary: Get sale details
+      description: Retrieves detailed information about a specific sale from local cache
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          description: The unique identifier of the sale
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Sale'
+                  metadata:
+                    $ref: '#/components/schemas/CacheMetadata'
+        '404':
+          description: Sale not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /cache/status:
+    get:
+      tags:
+        - Cache
+      summary: Get cache status
+      description: Returns information about the local cache state and synchronization status
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storeId:
+                    type: string
+                    description: Store identifier
+                  lastSyncTime:
+                    type: string
+                    format: date-time
+                    description: Last successful synchronization with server
+                  cacheSize:
+                    type: integer
+                    description: Number of records in cache
+                  syncStatus:
+                    type: string
+                    enum: [synced, syncing, stale, error]
+                    description: Current sync status
+                  recordCounts:
+                    type: object
+                    properties:
+                      products:
+                        type: integer
+                      reservations:
+                        type: integer
+                      sales:
+                        type: integer
+                  serverConnected:
+                    type: boolean
+                    description: Whether server is currently reachable
+
+  /cache/refresh:
+    post:
+      tags:
+        - Cache
+      summary: Manually trigger cache refresh
+      description: Forces a synchronization with the remote server to update local cache
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          description: The ID of the store
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Refresh initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Cache refresh initiated
+                  estimatedTime:
+                    type: integer
+                    description: Estimated time in seconds
+        '503':
+          description: Server unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique product identifier
+        name:
+          type: string
+          description: Product name
+        description:
+          type: string
+          description: Product description
+        price:
+          type: number
+          format: float
+          description: Product price
+        currency:
+          type: string
+          default: USD
+          description: Price currency
+        totalStock:
+          type: integer
+          description: Total quantity in inventory
+        reservedStock:
+          type: integer
+          description: Quantity currently reserved
+        availableStock:
+          type: integer
+          description: Quantity available for sale (totalStock - reservedStock)
+        category:
+          type: string
+          description: Product category
+        imageUrl:
+          type: string
+          format: uri
+          description: Product image URL
+        sku:
+          type: string
+          description: Stock keeping unit
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Reservation identifier
+        storeId:
+          type: string
+          description: ID of the store where reservation was made
+        storeName:
+          type: string
+          description: Name of the store
+        workerId:
+          type: string
+          description: ID of worker who created the reservation
+        workerName:
+          type: string
+          description: Name of worker who created the reservation
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReservationItem'
+        customerName:
+          type: string
+          description: Optional customer name
+        notes:
+          type: string
+          description: Optional notes
+        subtotal:
+          type: number
+          format: float
+          description: Total price of reserved items
+        currency:
+          type: string
+          default: USD
+        status:
+          type: string
+          enum: [active, completed, cancelled]
+          description: Reservation status
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration time for the reservation
+
+    ReservationItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Reservation item identifier
+        productId:
+          type: string
+          description: Product identifier
+        productName:
+          type: string
+          description: Product name at time of reservation
+        productSku:
+          type: string
+          description: Product SKU
+        quantity:
+          type: integer
+          minimum: 1
+        price:
+          type: number
+          format: float
+          description: Price at time of reservation
+        subtotal:
+          type: number
+          format: float
+          description: Item quantity × price
+
+    Sale:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Sale identifier
+        saleNumber:
+          type: string
+          description: Human-readable sale number
+        storeId:
+          type: string
+          description: ID of the store where sale was completed
+        storeName:
+          type: string
+          description: Name of the store
+        workerId:
+          type: string
+          description: ID of worker who completed the sale
+        workerName:
+          type: string
+          description: Name of worker who completed the sale
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleItem'
+        customerName:
+          type: string
+          description: Optional customer name
+        paymentMethod:
+          type: string
+          enum: [cash, card, transfer]
+          description: Payment method used
+        notes:
+          type: string
+          description: Optional notes
+        subtotal:
+          type: number
+          format: float
+          description: Total before tax
+        tax:
+          type: number
+          format: float
+          description: Tax amount
+        total:
+          type: number
+          format: float
+          description: Total amount including tax
+        currency:
+          type: string
+          default: USD
+        reservationId:
+          type: string
+          description: If sale was from a reservation
+        createdAt:
+          type: string
+          format: date-time
+
+    SaleItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Sale item identifier
+        productId:
+          type: string
+          description: Product identifier
+        productName:
+          type: string
+          description: Product name at time of sale
+        productSku:
+          type: string
+          description: Product SKU
+        quantity:
+          type: integer
+          minimum: 1
+        price:
+          type: number
+          format: float
+          description: Price at time of sale
+        subtotal:
+          type: number
+          format: float
+          description: Item quantity × price
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Current page number
+        limit:
+          type: integer
+          description: Items per page
+        total:
+          type: integer
+          description: Total number of items
+        totalPages:
+          type: integer
+          description: Total number of pages
+
+    CacheMetadata:
+      type: object
+      properties:
+        cachedAt:
+          type: string
+          format: date-time
+          description: When this data was cached locally
+        lastServerSync:
+          type: string
+          format: date-time
+          description: Last time cache was synced with server
+        isStale:
+          type: boolean
+          description: Whether this data might be outdated
+        source:
+          type: string
+          enum: [cache, server]
+          description: Where this data came from
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details

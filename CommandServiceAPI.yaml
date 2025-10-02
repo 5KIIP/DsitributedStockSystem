@@ -1,0 +1,406 @@
+openapi: 3.0.3
+info:
+  title: CommandService API
+  description: Local client-side service for write operations (reservations, sales) with error handling and retry logic that forwards to remote server
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8081/api/v1
+    description: Local service running on cashier PC
+
+tags:
+  - name: Reservations
+    description: Reservation write operations
+  - name: Sales
+    description: Sale write operations
+  - name: Connection
+    description: Connection and health management
+
+paths:
+  /reservations:
+    post:
+      tags:
+        - Reservations
+      summary: Create reservation
+      description: Creates a reservation by forwarding request to remote server with error handling and retry logic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - storeId
+                - items
+              properties:
+                storeId:
+                  type: string
+                  description: The ID of the store making the reservation
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - productId
+                      - quantity
+                    properties:
+                      productId:
+                        type: string
+                        description: The unique identifier of the product
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        description: Quantity to reserve
+                customerName:
+                  type: string
+                  description: Optional customer name for reference
+                workerId:
+                  type: string
+                  description: Optional worker ID for tracking
+                notes:
+                  type: string
+                  description: Optional notes about the reservation
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+        '400':
+          description: Bad request (insufficient stock or invalid product)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '503':
+          description: Remote server unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+
+  /reservations/{reservationId}/cancel:
+    delete:
+      tags:
+        - Reservations
+      summary: Cancel reservation
+      description: Cancels a reservation by forwarding request to remote server, returns products to available inventory
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          description: The unique identifier of the reservation to cancel
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reservation cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '503':
+          description: Remote server unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+
+  /sales:
+    post:
+      tags:
+        - Sales
+      summary: Complete sale
+      description: Completes a sale by confirming a reservation via remote server with error handling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reservationId
+                - paymentMethod
+              properties:
+                reservationId:
+                  type: string
+                  description: The ID of the reservation to convert to a sale
+                paymentMethod:
+                  type: string
+                  enum: [cash, card, transfer]
+                  description: Payment method used
+                notes:
+                  type: string
+                  description: Optional additional notes about the sale
+      responses:
+        '201':
+          description: Sale completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+        '400':
+          description: Bad request (invalid reservation or payment method)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+        '503':
+          description: Remote server unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandError'
+
+  /connection/status:
+    get:
+      tags:
+        - Connection
+      summary: Get connection status
+      description: Check if the CommandService can reach the remote server
+      responses:
+        '200':
+          description: Connection status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [connected, disconnected, degraded]
+                    description: Current connection status
+                  remoteServerUrl:
+                    type: string
+                    description: URL of the remote server
+                  lastSuccessfulRequest:
+                    type: string
+                    format: date-time
+                    description: Timestamp of last successful server request
+                  lastConnectionAttempt:
+                    type: string
+                    format: date-time
+                    description: Timestamp of last connection attempt
+                  latency:
+                    type: integer
+                    description: Average latency to server in milliseconds
+                  pendingOperations:
+                    type: integer
+                    description: Number of operations queued (if offline mode enabled)
+
+  /connection/test:
+    post:
+      tags:
+        - Connection
+      summary: Test connection to remote server
+      description: Manually trigger a connection test to the remote server
+      responses:
+        '200':
+          description: Connection test successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  latency:
+                    type: integer
+                    description: Response time in milliseconds
+                  timestamp:
+                    type: string
+                    format: date-time
+        '503':
+          description: Connection test failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    description: Error message
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /queue:
+    get:
+      tags:
+        - Connection
+      summary: Get pending operations queue
+      description: Returns list of operations queued due to server unavailability (if offline mode is enabled)
+      responses:
+        '200':
+          description: Queue retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queueSize:
+                    type: integer
+                    description: Number of pending operations
+                  operations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Operation identifier
+                        type:
+                          type: string
+                          enum: [create_reservation, cancel_reservation, complete_sale]
+                          description: Type of operation
+                        payload:
+                          type: object
+                          description: Original request payload
+                        attempts:
+                          type: integer
+                          description: Number of retry attempts
+                        createdAt:
+                          type: string
+                          format: date-time
+                        lastAttempt:
+                          type: string
+                          format: date-time
+                        status:
+                          type: string
+                          enum: [pending, retrying, failed]
+
+components:
+  schemas:
+    CommandResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the operation was successful
+        commandId:
+          type: string
+          description: Unique identifier for this command execution
+        timestamp:
+          type: string
+          format: date-time
+          description: When the command was executed
+        data:
+          type: object
+          description: Response data from remote server (reservation or sale object)
+        execution:
+          type: object
+          properties:
+            retryCount:
+              type: integer
+              description: Number of retry attempts made
+            processingTime:
+              type: integer
+              description: Time taken to process in milliseconds
+            serverRequestId:
+              type: string
+              description: Request ID from remote server
+            serverLatency:
+              type: integer
+              description: Network latency to server in milliseconds
+
+    CommandError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+          description: Always false for errors
+        commandId:
+          type: string
+          description: Unique identifier for this command attempt
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: 
+                - INSUFFICIENT_STOCK
+                - PRODUCT_NOT_FOUND
+                - RESERVATION_NOT_FOUND
+                - INVALID_REQUEST
+                - INVALID_PAYMENT_METHOD
+                - SERVER_UNAVAILABLE
+                - NETWORK_ERROR
+                - TIMEOUT
+                - CONFLICT
+                - UNKNOWN_ERROR
+              description: Error code for programmatic handling
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: object
+              description: Additional error details from server
+            retryable:
+              type: boolean
+              description: Whether this operation can be retried
+            suggestedAction:
+              type: string
+              description: Suggested action for the user/worker
+            serverError:
+              type: object
+              description: Original error from remote server if available
+        execution:
+          type: object
+          properties:
+            retryCount:
+              type: integer
+              description: Number of retry attempts made
+            lastAttempt:
+              type: string
+              format: date-time
+              description: Timestamp of last retry attempt
+            queuedForRetry:
+              type: boolean
+              description: Whether operation was queued for later retry
+            estimatedRetryTime:
+              type: string
+              format: date-time
+              description: When next retry will be attempted

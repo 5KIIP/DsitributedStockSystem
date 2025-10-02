@@ -1,0 +1,353 @@
+openapi: 3.0.3
+info:
+  title: Database Administrator Service API
+  description: Internal service that executes SQL operations on the main database and triggers notification broadcasts to store cache services
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://internal-db-admin:9000/api/v1
+    description: Internal service (not publicly accessible)
+
+tags:
+  - name: Operations
+    description: Database operations
+  - name: Health
+    description: Service health monitoring
+
+paths:
+  /operations/reservation/create:
+    post:
+      tags:
+        - Operations
+      summary: Create reservation in database
+      description: Executes SQL to create a reservation, updates product stock, and triggers notification to all stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - items
+              properties:
+                transactionId:
+                  type: string
+                  description: Transaction ID from Transaction Service for tracking
+                storeId:
+                  type: string
+                  description: Store ID making the reservation
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - productId
+                      - quantity
+                    properties:
+                      productId:
+                        type: string
+                      quantity:
+                        type: integer
+                        minimum: 1
+                customerName:
+                  type: string
+                workerId:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResult'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '409':
+          description: Conflict (insufficient stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+
+  /operations/reservation/cancel:
+    delete:
+      tags:
+        - Operations
+      summary: Cancel reservation in database
+      description: Executes SQL to cancel a reservation, returns product stock, and triggers notification to all stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - reservationId
+              properties:
+                transactionId:
+                  type: string
+                  description: Transaction ID from Transaction Service
+                reservationId:
+                  type: string
+                  description: Reservation ID to cancel
+      responses:
+        '200':
+          description: Reservation cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResult'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '409':
+          description: Conflict (reservation already completed or cancelled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+
+  /operations/sale/create:
+    post:
+      tags:
+        - Operations
+      summary: Complete sale in database
+      description: Executes SQL to create a sale from reservation, updates stock permanently, and triggers notification to all stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - reservationId
+                - paymentMethod
+              properties:
+                transactionId:
+                  type: string
+                  description: Transaction ID from Transaction Service
+                reservationId:
+                  type: string
+                  description: Reservation ID to convert to sale
+                paymentMethod:
+                  type: string
+                  enum: [cash, card, transfer]
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Sale created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResult'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '409':
+          description: Conflict (reservation already completed or cancelled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationError'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check if the Database Administrator Service is healthy
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  components:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+                        description: Main database connection status
+                      notificationService:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+                        description: Notification service connection status
+                  metrics:
+                    type: object
+                    properties:
+                      operationsProcessed:
+                        type: integer
+                        description: Total operations processed
+                      averageExecutionTime:
+                        type: integer
+                        description: Average SQL execution time in milliseconds
+                      failureRate:
+                        type: number
+                        format: float
+                        description: Percentage of failed operations
+
+components:
+  schemas:
+    OperationResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        transactionId:
+          type: string
+          description: Original transaction ID
+        timestamp:
+          type: string
+          format: date-time
+          description: When the operation completed
+        data:
+          type: object
+          description: Created or updated entity (reservation, sale, etc.)
+        changes:
+          type: object
+          description: Summary of database changes made
+          properties:
+            affectedTables:
+              type: array
+              items:
+                type: string
+              example: [reservations, products]
+            recordsModified:
+              type: integer
+              example: 3
+        notification:
+          type: object
+          description: Information about notification broadcast
+          properties:
+            notificationId:
+              type: string
+              description: ID of the notification sent
+            broadcastTo:
+              type: array
+              items:
+                type: string
+              description: List of store IDs notified
+              example: [store-a, store-b, store-c]
+            transactionLog:
+              type: object
+              description: Transaction log sent to stores
+              properties:
+                transactionId:
+                  type: string
+                operationCount:
+                  type: integer
+        execution:
+          type: object
+          properties:
+            sqlExecutionTime:
+              type: integer
+              description: Time to execute SQL in milliseconds
+            notificationTime:
+              type: integer
+              description: Time to send notifications in milliseconds
+            totalTime:
+              type: integer
+              description: Total operation time in milliseconds
+
+    OperationError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        transactionId:
+          type: string
+          description: Original transaction ID
+        timestamp:
+          type: string
+          format: date-time
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_DATA
+                - INSUFFICIENT_STOCK
+                - PRODUCT_NOT_FOUND
+                - RESERVATION_NOT_FOUND
+                - RESERVATION_ALREADY_COMPLETED
+                - RESERVATION_ALREADY_CANCELLED
+                - DATABASE_ERROR
+                - CONSTRAINT_VIOLATION
+                - NOTIFICATION_FAILED
+                - UNKNOWN_ERROR
+              description: Error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: object
+              description: Additional error details
+            sqlError:
+              type: string
+              description: SQL error message if database error occurred
+        rollback:
+          type: object
+          description: Information about rollback if transaction failed
+          properties:
+            executed:
+              type: boolean
+              description: Whether rollback was executed
+            success:
+              type: boolean
+              description: Whether rollback succeeded

@@ -1,0 +1,394 @@
+openapi: 3.0.3
+info:
+  title: Transaction Service API (Server)
+  description: Server-side service that receives write operations from client CommandServices, queues them, and processes them sequentially
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+
+tags:
+  - name: Reservations
+    description: Reservation transaction operations
+  - name: Sales
+    description: Sale transaction operations
+  - name: Queue
+    description: Queue management and monitoring
+
+paths:
+  /reservations:
+    post:
+      tags:
+        - Reservations
+      summary: Create reservation
+      description: Receives a reservation creation request from client, queues it, processes it, and returns the result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - storeId
+                - items
+              properties:
+                storeId:
+                  type: string
+                  description: The ID of the store making the reservation
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - productId
+                      - quantity
+                    properties:
+                      productId:
+                        type: string
+                        description: The unique identifier of the product
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        description: Quantity to reserve
+                customerName:
+                  type: string
+                  description: Optional customer name for reference
+                workerId:
+                  type: string
+                  description: Optional worker ID for tracking
+                notes:
+                  type: string
+                  description: Optional notes about the reservation
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Bad request (invalid data or insufficient stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+
+  /reservations/{reservationId}/cancel:
+    delete:
+      tags:
+        - Reservations
+      summary: Cancel reservation
+      description: Receives a reservation cancellation request, processes it, and returns the result
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          description: The unique identifier of the reservation to cancel
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reservation cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+
+  /sales:
+    post:
+      tags:
+        - Sales
+      summary: Complete sale
+      description: Receives a sale completion request (from reservation), processes it, and returns the result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reservationId
+                - paymentMethod
+              properties:
+                reservationId:
+                  type: string
+                  description: The ID of the reservation to convert to a sale
+                paymentMethod:
+                  type: string
+                  enum: [cash, card, transfer]
+                  description: Payment method used
+                notes:
+                  type: string
+                  description: Optional additional notes about the sale
+      responses:
+        '201':
+          description: Sale completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Bad request (invalid payment method)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '409':
+          description: Conflict (reservation already completed or cancelled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+
+  /transactions/{transactionId}/status:
+    get:
+      tags:
+        - Queue
+      summary: Get transaction status
+      description: Check the processing status of a queued transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          description: The unique identifier of the transaction
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactionId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [queued, processing, completed, failed, cancelled]
+                    description: Current status of the transaction
+                  queuePosition:
+                    type: integer
+                    description: Position in queue (if still queued)
+                  submittedAt:
+                    type: string
+                    format: date-time
+                    description: When transaction was submitted
+                  processedAt:
+                    type: string
+                    format: date-time
+                    description: When transaction was processed (if completed)
+                  result:
+                    type: object
+                    description: Result data if completed (reservation or sale object)
+                  error:
+                    type: object
+                    description: Error details if failed
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionError'
+
+  /queue/status:
+    get:
+      tags:
+        - Queue
+      summary: Get queue status
+      description: Returns current state of the transaction queue
+      responses:
+        '200':
+          description: Queue status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queueSize:
+                    type: integer
+                    description: Number of transactions currently queued
+                  processing:
+                    type: boolean
+                    description: Whether queue is actively processing
+                  averageProcessingTime:
+                    type: integer
+                    description: Average time to process a transaction in milliseconds
+                  estimatedWaitTime:
+                    type: integer
+                    description: Estimated wait time for new transactions in seconds
+                  statistics:
+                    type: object
+                    properties:
+                      totalProcessed:
+                        type: integer
+                        description: Total transactions processed (lifetime)
+                      successCount:
+                        type: integer
+                        description: Number of successful transactions
+                      failureCount:
+                        type: integer
+                        description: Number of failed transactions
+                      lastProcessedAt:
+                        type: string
+                        format: date-time
+
+  /health:
+    get:
+      tags:
+        - Queue
+      summary: Health check
+      description: Check if the Transaction Service is healthy
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  components:
+                    type: object
+                    properties:
+                      queue:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+                      database:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+                      dbAdminService:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+
+components:
+  schemas:
+    TransactionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the transaction was successful
+        transactionId:
+          type: string
+          description: Unique identifier for this transaction
+        timestamp:
+          type: string
+          format: date-time
+          description: When the transaction was processed
+        data:
+          type: object
+          description: Response data (reservation or sale object)
+        execution:
+          type: object
+          properties:
+            processingTime:
+              type: integer
+              description: Time taken to process in milliseconds
+            queueWaitTime:
+              type: integer
+              description: Time spent waiting in queue in milliseconds
+
+    TransactionError:
+      type: object
+      properties:
+        error:
+          type: boolean
+          example: true
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - INSUFFICIENT_STOCK
+            - PRODUCT_NOT_FOUND
+            - RESERVATION_NOT_FOUND
+            - RESERVATION_ALREADY_COMPLETED
+            - INVALID_PAYMENT_METHOD
+            - STORE_NOT_FOUND
+            - QUEUE_FULL
+            - SERVICE_UNAVAILABLE
+            - INTERNAL_ERROR
+          description: Error code for programmatic handling
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details
+        timestamp:
+          type: string
+          format: date-time
+        retryable:
+          type: boolean
+          description: Whether the request can be retried
+        suggestedAction:
+          type: string
+          description: Suggested action for handling the error
