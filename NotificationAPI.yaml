@@ -1,0 +1,735 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API
+  description: Internal service that broadcasts transaction logs to all store Cache Services to keep local caches synchronized
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://internal-notification:9001/api/v1
+    description: Internal service (not publicly accessible)
+
+tags:
+  - name: Broadcast
+    description: Broadcasting operations to stores
+  - name: Failures
+    description: Broadcast failure tracking and management
+  - name: Stores
+    description: Store registration and management
+  - name: Health
+    description: Service health monitoring
+
+paths:
+  /broadcast:
+    post:
+      tags:
+        - Broadcast
+      summary: Broadcast transaction log to all stores
+      description: Sends transaction log to all registered store Cache Services with automatic retry logic. Always returns success to caller, failures are logged internally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                  description: Unique transaction identifier
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: When the transaction occurred
+                sequenceNumber:
+                  type: integer
+                  description: Sequential number for ordering
+                targetStores:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional list of specific store IDs to notify (if empty, broadcasts to all)
+                operations:
+                  type: array
+                  description: Ordered list of operations to broadcast
+                  items:
+                    type: object
+                    required:
+                      - entityType
+                      - operation
+                      - entityId
+                    properties:
+                      entityType:
+                        type: string
+                        enum: [product, reservation, sale]
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field, cancel, complete]
+                      entityId:
+                        type: string
+                      data:
+                        type: object
+                        description: Full entity data
+                      fields:
+                        type: object
+                        description: Specific fields updated
+                        additionalProperties: true
+      responses:
+        '202':
+          description: Broadcast accepted and queued for delivery with retry logic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastAccepted'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+  /broadcast/products:
+    post:
+      tags:
+        - Broadcast
+      summary: Broadcast product transaction log
+      description: Sends product-specific transaction log to all stores with automatic retry logic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+                sequenceNumber:
+                  type: integer
+                targetStores:
+                  type: array
+                  items:
+                    type: string
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - productId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field]
+                      productId:
+                        type: string
+                      data:
+                        type: object
+                      fields:
+                        type: object
+                        additionalProperties: true
+      responses:
+        '202':
+          description: Broadcast accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastAccepted'
+
+  /broadcast/reservations:
+    post:
+      tags:
+        - Broadcast
+      summary: Broadcast reservation transaction log
+      description: Sends reservation-specific transaction log to all stores with automatic retry logic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                storeId:
+                  type: string
+                  description: Store that initiated the reservation
+                timestamp:
+                  type: string
+                  format: date-time
+                sequenceNumber:
+                  type: integer
+                targetStores:
+                  type: array
+                  items:
+                    type: string
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - reservationId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, delete, update_field, cancel, complete]
+                      reservationId:
+                        type: string
+                      data:
+                        type: object
+                      fields:
+                        type: object
+                        additionalProperties: true
+      responses:
+        '202':
+          description: Broadcast accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastAccepted'
+
+  /broadcast/sales:
+    post:
+      tags:
+        - Broadcast
+      summary: Broadcast sale transaction log
+      description: Sends sale-specific transaction log to all stores with automatic retry logic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - storeId
+                - timestamp
+                - operations
+              properties:
+                transactionId:
+                  type: string
+                storeId:
+                  type: string
+                  description: Store that completed the sale
+                timestamp:
+                  type: string
+                  format: date-time
+                sequenceNumber:
+                  type: integer
+                targetStores:
+                  type: array
+                  items:
+                    type: string
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - operation
+                      - saleId
+                    properties:
+                      operation:
+                        type: string
+                        enum: [create, update, update_field]
+                      saleId:
+                        type: string
+                      data:
+                        type: object
+                      fields:
+                        type: object
+                        additionalProperties: true
+      responses:
+        '202':
+          description: Broadcast accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastAccepted'
+
+  /failures:
+    get:
+      tags:
+        - Failures
+      summary: Get broadcast failure log
+      description: Returns list of notifications that failed to deliver after all retry attempts
+      parameters:
+        - name: storeId
+          in: query
+          description: Filter failures by store ID
+          required: false
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          description: Filter failures from this date
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Filter failures until this date
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of failures to return
+          required: false
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Failure log retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  failures:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BroadcastFailure'
+                  totalFailures:
+                    type: integer
+                  storesAffected:
+                    type: array
+                    items:
+                      type: string
+                    description: List of store IDs with failures
+
+  /failures/{storeId}/summary:
+    get:
+      tags:
+        - Failures
+      summary: Get store failure summary
+      description: Returns summary of all failed notifications for a specific store to identify lagging caches
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Failure summary retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storeId:
+                    type: string
+                  storeName:
+                    type: string
+                  totalFailures:
+                    type: integer
+                    description: Total failed notifications
+                  oldestFailure:
+                    type: string
+                    format: date-time
+                    description: Timestamp of oldest failed notification
+                  newestFailure:
+                    type: string
+                    format: date-time
+                    description: Timestamp of most recent failed notification
+                  missedTransactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transactionId:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+                        retryAttempts:
+                          type: integer
+                        lastError:
+                          type: string
+                  lagStatus:
+                    type: string
+                    enum: [current, slightly_behind, significantly_behind, critical]
+                    description: Assessment of how far behind this store is
+        '404':
+          description: Store not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+  /failures/retry:
+    post:
+      tags:
+        - Failures
+      summary: Manually retry failed broadcasts
+      description: Trigger manual retry of failed notifications for specific stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                storeIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Specific stores to retry (empty = retry all)
+                transactionIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Specific transactions to retry (empty = retry all)
+      responses:
+        '202':
+          description: Retry initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Retry initiated for failed broadcasts
+                  retryCount:
+                    type: integer
+                    description: Number of notifications queued for retry
+
+  /stores:
+    get:
+      tags:
+        - Stores
+      summary: Get all registered stores
+      description: Returns list of all stores registered to receive notifications
+      responses:
+        '200':
+          description: Store list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stores:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Store'
+                  totalStores:
+                    type: integer
+
+    post:
+      tags:
+        - Stores
+      summary: Register a new store
+      description: Registers a store to receive cache notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - storeId
+                - storeName
+                - cacheServiceUrl
+              properties:
+                storeId:
+                  type: string
+                  description: Unique store identifier
+                storeName:
+                  type: string
+                  description: Store name
+                cacheServiceUrl:
+                  type: string
+                  format: uri
+                  description: URL of the store's Cache Service
+                  example: http://store-a-pc:8082/api/v1
+      responses:
+        '201':
+          description: Store registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Store registered successfully
+                  store:
+                    $ref: '#/components/schemas/Store'
+        '409':
+          description: Store already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+  /stores/{storeId}:
+    get:
+      tags:
+        - Stores
+      summary: Get store details
+      description: Returns details of a specific registered store
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Store details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Store'
+        '404':
+          description: Store not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+    patch:
+      tags:
+        - Stores
+      summary: Update store details
+      description: Updates store information (like Cache Service URL)
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                storeName:
+                  type: string
+                cacheServiceUrl:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Store updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  store:
+                    $ref: '#/components/schemas/Store'
+        '404':
+          description: Store not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+    delete:
+      tags:
+        - Stores
+      summary: Unregister a store
+      description: Removes a store from receiving notifications
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Store unregistered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Store unregistered successfully
+        '404':
+          description: Store not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationError'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check if the Notification Service is healthy
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  registeredStores:
+                    type: integer
+                    description: Number of stores registered
+                  metrics:
+                    type: object
+                    properties:
+                      totalBroadcasts:
+                        type: integer
+                      successfulBroadcasts:
+                        type: integer
+                      failedBroadcasts:
+                        type: integer
+                      pendingRetries:
+                        type: integer
+                        description: Number of broadcasts currently queued for retry
+                      averageBroadcastTime:
+                        type: integer
+                        description: Average time to broadcast in milliseconds
+                      storesWithFailures:
+                        type: integer
+                        description: Number of stores currently experiencing failures
+
+components:
+  schemas:
+    BroadcastAccepted:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+          example: true
+        notificationId:
+          type: string
+          description: Unique identifier for this broadcast
+        transactionId:
+          type: string
+          description: Original transaction ID
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+          example: Broadcast queued for delivery with automatic retry
+        targetStores:
+          type: integer
+          description: Number of stores that will receive this notification
+
+    BroadcastFailure:
+      type: object
+      properties:
+        failureId:
+          type: string
+          description: Unique identifier for this failure
+        notificationId:
+          type: string
+          description: ID of the notification that failed
+        transactionId:
+          type: string
+          description: Transaction ID that failed to broadcast
+        storeId:
+          type: string
+        storeName:
+          type: string
+        firstAttempt:
+          type: string
+          format: date-time
+          description: When first attempt was made
+        lastAttempt:
+          type: string
+          format: date-time
+          description: When last retry attempt was made
+        totalAttempts:
+          type: integer
+          description: Total number of attempts made
+        lastError:
+          type: string
+          description: Error message from last attempt
+        transactionLog:
+          type: object
+          description: The transaction log that failed to deliver
+        status:
+          type: string
+          enum: [retrying, exhausted, manual_retry_needed]
+          description: Current status of this failure
+
+    Store:
+      type: object
+      properties:
+        storeId:
+          type: string
+        storeName:
+          type: string
+        cacheServiceUrl:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [active, inactive, unreachable]
+        registeredAt:
+          type: string
+          format: date-time
+        lastNotification:
+          type: string
+          format: date-time
+        statistics:
+          type: object
+          properties:
+            totalNotifications:
+              type: integer
+            successfulNotifications:
+              type: integer
+            failedNotifications:
+              type: integer
+
+    NotificationError:
+      type: object
+      properties:
+        error:
+          type: boolean
+          example: true
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - STORE_NOT_FOUND
+            - STORE_ALREADY_REGISTERED
+            - BROADCAST_FAILED
+            - ALL_STORES_UNREACHABLE
+            - INTERNAL_ERROR
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
